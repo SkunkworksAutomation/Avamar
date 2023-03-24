@@ -1,7 +1,7 @@
 # Documentation
 ## Avamar
 * https://www.dell.com/en-us/dt/data-protection/data-protection-suite/avamar-data-protection-software.htm
-* https://<YourAvamarServer>/api/swagger-ui.html
+* https://{{YourAvamarServer}}/api/swagger-ui.html
 
 ## Ansible:
 * https://www.ansible.com/products/automation-platform
