@@ -83,3 +83,44 @@ function get-datadomains {
         return $Query.content;
     } # END PROCESS
 } # END FUNCTION
+
+function get-clients {
+     [CmdletBinding()]
+    param (
+        [Parameter( Mandatory=$true)]
+        [int]$PageSize
+    )
+    begin {}
+    process {
+        $Results = @()
+
+        # OMIT /MC_RETIRED AND /MC_SYSTEM DOMAINS
+        $Query = Invoke-RestMethod `
+        -Uri "$($AuthObject.server)/clients?filter=domainFqdn!=/MC_RETIRED&filter=domainFqdn!=/MC_SYSTEM&recursive=true&size=$($PageSize)&page=0" `
+        -Method GET `
+        -ContentType 'application/json' `
+        -Headers ($AuthObject.token) `
+        -SkipCertificateCheck
+      
+        # IF THE RESULTS ARE GREATER THAN 1 PAGE, GET ALL PAGED RESULTS
+        if($Query.totalPages -gt 1) {
+            for($i=0;$i -lt $Query.totalPages;$i++) {
+                Write-Progress `
+                -Activity "Processing pages..." `
+                -Status "$($i+1) of $($Query.totalPages) - $([math]::round((($i/$Query.totalPages)*100),2))% " `
+                -PercentComplete (($i/$Query.totalPages)*100)
+
+                $Pages = Invoke-RestMethod `
+                -Uri "$($AuthObject.server)/clients?filter=domainFqdn!=/MC_RETIRED&filter=domainFqdn!=/MC_SYSTEM&recursive=true&size=$($PageSize)&page=$($i)" `
+                -Method GET `
+                -ContentType 'application/json' `
+                -Headers ($AuthObject.token) `
+                -SkipCertificateCheck
+                $Results += $Pages.content
+            } # END FOR
+        } else {
+            $Results = $Query.content
+        }
+        return $Results;
+    } # END PROCESS
+} # END FUNCTION
