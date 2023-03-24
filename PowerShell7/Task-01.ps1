@@ -4,11 +4,14 @@
 #>
 
 Import-Module .\dell.avamar.psm1 -Force
-$avamar = 'ave-01.vcorp.local'
+$avamar = 'ave-02.vcorp.local'
 $pagesize = 25
-$Results = @()
 connect-restapi -Server $avamar
 
 <#
-   PLACE HOLDER
+   GET ATTACHED POWERPROTECT DD SYSTEMS
 #>
+
+$query = get-datadomains
+
+$query | format-list

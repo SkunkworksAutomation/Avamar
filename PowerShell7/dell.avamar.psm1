@@ -31,8 +31,14 @@ function connect-restapi {
         }
 
         # BASE64 ENCODE USERNAME AND PASSWORD AND CREATE THE REQUEST BODY
-        $base64AuthInfo = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes(("{0}:{1}" -f `
-            $oauth2.username,(ConvertFrom-SecureString -SecureString $oauth2.password -AsPlainText))))
+        $base64AuthInfo = [Convert]::ToBase64String(
+            [Text.Encoding]::ASCII.GetBytes(
+                (
+                    "{0}:{1}" -f $oauth2.username,
+                    (ConvertFrom-SecureString -SecureString $oauth2.password -AsPlainText)
+                )
+            )
+        )
         $body = "grant_type=password&scope=write&username=$($admin.username)&password=$(ConvertFrom-SecureString -SecureString $admin.password -AsPlainText)" 
     }
     process {
@@ -58,3 +64,22 @@ function connect-restapi {
         $global:AuthObject | Format-List
     }
 }
+
+function get-datadomains {
+    [CmdletBinding()]
+    param (
+    )
+    begin {}
+    process {
+
+        # GET ATTACHED DATA DOMAIN SYSTEMS
+        $Query = Invoke-RestMethod `
+        -Uri "$($AuthObject.server)/datadomains" `
+        -Method GET `
+        -ContentType 'application/json' `
+        -Headers ($AuthObject.token) `
+        -SkipCertificateCheck
+        
+        return $Query.content;
+    } # END PROCESS
+} # END FUNCTION
