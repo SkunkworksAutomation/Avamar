@@ -1,0 +1,110 @@
+---
+- name: "Deploy Linux file system agents"
+  hosts: "{{ ansible_play_batch }}"
+  collections:
+    - community.general
+  gather_facts: true
+  become: no
+   
+  vars:
+  vars_files:
+    - vars/credentials.yml
+
+  tasks:
+# BEGIN REDHAT TASKS
+
+# CHECK TO SEE IF THE AVAMAR CLIENT IS INSTALLED ON THE CENTOS BOX
+  - name: List packages Redhat
+    yum:
+      list: AvamarClient
+    when: ansible_facts['os_family'] == "RedHat"
+    register: redhat_package
+
+  - name:
+    debug:
+      var: redhat_package
+
+# DOWNLOAD THE AVAMAR CLIENT AGENT
+  - name: Download Avamar File System Agent for Redhat
+    ansible.builtin.get_url:
+      url: https://{{ave_host}}.{{ad_domain}}/dtlt/downloadArtifact?item=L0RQTkluc3RhbGxzL2Rvd25sb2Fkcy9DRU5UT1M3XzY0L0F2YW1hckNsaWVudC1saW51eC1zbGVzMTEteDg2XzY0LTE5LjQuMTAwLTEyNC5ycG0=&doc=false
+      dest: /tmp/{{client_redhat}}
+      validate_certs: no
+    when: ansible_facts['os_family'] == "RedHat" and (redhat_package.results | length == 0)
+    register: redhat_agent
+
+  - name:
+    debug:
+      var: redhat_agent
+
+# INSTALLED THE AVAMAR CLIENT AGENT ON Redhat
+  - name: Install Avamar client if it's not installed already on Redhat
+    yum:
+      name: /tmp/{{client_redhat}}
+      state: present
+    when: ansible_facts['os_family'] == "RedHat" and (redhat_package.results | length == 0)
+    register: redhat_install
+  
+  - name:
+    debug:
+      var: redhat_install
+
+# REGISTER THE AGENT WITH AVAMAR
+  - name: Register the Avamar agent if it's not already installed on Redhat
+    shell: |
+        /etc/init.d/avagent stop
+        /etc/init.d/avagent register {{ave_host}}.{{ad_domain}} {{ave_domain}}
+    register: redhat_register
+    when: ansible_facts['os_family'] == "RedHat" and (redhat_package.results | length == 0)
+
+  - name:
+    debug:
+      var: redhat_register
+
+# BEGIN UBUNTU TASKS
+
+# CHECK TO SEE IF THE AVAMAR CLIENT IS INSTALLED ON THE UBUNTU BOX
+  - name: Test if it's installed for debian systems
+    shell: dpkg-query -l avamar
+    ignore_errors: true
+    when: ansible_facts['os_family'] == "Debian"
+    register: debian_package
+
+  - name:
+    debug:
+      var: debian_package.rc
+
+# DOWNLOAD THE AVAMAR CLIENT AGENT
+  - name: Download Avamar File System Agent for Debian
+    ansible.builtin.get_url:
+      url: https://{{ave_host}}.{{ad_domain}}/dtlt/downloadArtifact?item=L0RQTkluc3RhbGxzL2Rvd25sb2Fkcy9ERUJJQU5fTElOVVhfNjQvQXZhbWFyQ2xpZW50LWRlYmlhbjQuMC14ODZfNjQtMTkuNC4xMDAtMTI0LmRlYg==&doc=false
+      dest: /tmp/{{client_debian}}
+      validate_certs: no
+    when: ansible_facts['os_family'] == "Debian" and debian_package.rc == 1
+    register: debian_agent
+
+  - name:
+    debug:
+      var: debian_agent
+  
+  - name: Install a .deb package
+    apt:
+      deb: /tmp/{{client_debian}}
+    when: ansible_facts['os_family'] == "Debian" and debian_package.rc == 1
+    register: debian_install
+
+  - name:
+    debug:
+      var: debian_install
+
+# REGISTER THE AGENT WITH AVAMAR
+  - name: Register the Avamar agent if it's not already installed on Debian
+    shell: |
+        /etc/init.d/avagent stop
+        /etc/init.d/avagent register {{ave_host}}.{{ad_domain}} {{ave_domain}}
+    register: debian_register
+    when: ansible_facts['os_family'] == "Debian" and debian_package.rc == 1
+
+  - name:
+    debug:
+      var: debian_register

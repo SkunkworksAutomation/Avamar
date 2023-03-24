@@ -1,0 +1,650 @@
+---
+- name: "Deploy Avamar, PowerProtect DD joined together with vCenter"
+  hosts: localhost
+  collections:
+    - community.vmware
+    - community.general
+  gather_facts: false
+  become: no
+   
+  vars:
+  vars_files:
+    - vars/credentials.yml
+    - vars/misc.yml
+
+  tasks:
+# DEPLOY THE NETWORKER OVA TO VCENTER
+  - name: Deploy Avamar OVA
+    vmware_deploy_ovf:
+      hostname: "{{vcenter_host}}"
+      username: "{{vcenter_id}}"
+      password: "{{vcenter_pwd}}"
+      validate_certs: no
+      name: "{{ave_host}}"
+      datacenter: "{{vcenter_dc}}"
+      datastore: "{{vcenter_ds}}"
+      folder: "{{vcenter_folder}}"
+      disk_provisioning: thin
+      networks: 
+        "VM Network": "{{vcenter_network}}"
+      ova: "{{artifact_path}}/{{ave_ova}}"
+      allow_duplicates: no
+      fail_on_spec_warnings: no
+      wait: no
+      wait_for_ip_address: no
+      inject_ovf_env: yes
+      properties:
+        vami.FQDN.Avamar_Virtual_Edition: "{{ave_host}}.{{ad_domain}}"
+        vami.ipv4.Avamar_Virtual_Edition: "{{ave_ip}}/{{ave_netmask}}"
+        vami.gatewayv4.Avamar_Virtual_Edition: "{{ave_gateway}}"
+        vami.DNS.Avamar_Virtual_Edition: "{{ave_dns}}"
+        vami.NTP.Avamar_Virtual_Edition: "{{ave_ntp}}"
+        vami.searchpaths.Avamar_Virtual_Edition: "{{ad_domain}}"
+      power_on: yes
+
+# DEPLOY THE DDVE OVA TO VCENTER
+  - name: Deploy PowerProtect Data Domain
+    vmware_deploy_ovf:
+      hostname: "{{vcenter_host}}"
+      username: "{{vcenter_id}}"
+      password: "{{vcenter_pwd}}"
+      validate_certs: no
+      name: "{{ddve_host}}"
+      datacenter: "{{vcenter_dc}}"
+      folder: "{{vcenter_folder}}"
+      datastore: "{{vcenter_ds}}"
+      disk_provisioning: thin
+      networks: 
+        "VM Network 1": "{{vcenter_network}}"
+        "VM Network 2": "{{vcenter_network}}"
+      ova: "{{artifact_path}}/{{ddve_ova}}"
+      allow_duplicates: no
+      fail_on_spec_warnings: no
+      wait: no
+      wait_for_ip_address: no
+      inject_ovf_env: yes
+      properties:
+        hostname: "{{ddve_host}}.{{ad_domain}}"
+        ipAddress: "{{ddve_ip}}"
+        netmask: "{{ddve_netmask}}"
+        gateway: "{{ddve_gateway}}"
+        dnsServer1: "{{ddve_dns1}}"
+        dnsServer2: "{{ddve_dns2}}"
+      power_on: yes
+ 
+ # ADD VDISK TO DDVE FOR ACTIVE TIER 
+  - name: "( {{ddve_host}} ): Adding {{ddve_disk_size}} GiB disk for active tier."
+    vmware_guest_disk:
+      hostname: "{{vcenter_host}}"
+      username: "{{vcenter_id}}"
+      password: "{{vcenter_pwd}}"
+      datacenter: "{{vcenter_dc}}"
+      name: "{{ddve_host}}"
+      disk:
+        - size_gb: "{{ddve_disk_size}}"
+          type: "{{ddve_disk_type}}"
+          state: present
+          datastore: "{{vcenter_ds}}"
+          disk_mode: "independent_persistent"
+          scsi_controller: 0
+          unit_number: 2
+      validate_certs: no
+    register: disk_facts
+
+# WAIT FOR HTTPS RESPONSE FROM POWERPROTECT DATA DOMAIN  
+  - name: "( {{ddve_host}} ): Waiting for HTTPS connectivity."
+    wait_for:
+      host: "{{ddve_host}}.{{ad_domain}}"
+      port: 443
+      state: started
+      delay: 1
+      sleep: 60
+      timeout: 600
+    register: waitforddve
+
+# AUTHENTICATE TO DDVE REST API
+  - name: "( {{ddve_host}} ): Authenticate to PowerProtect DD REST API"
+    uri:
+      url: https://{{ddve_host}}:3009/rest/v1.0/auth
+      method: POST
+      force_basic_auth: no
+      validate_certs: no
+      return_content: yes
+      body_format: json
+      body: |
+        {
+          "username": "{{ppdd_id}}",
+          "password": "{{ddve_old_pwd}}"
+        }
+      status_code: 201
+    register: dd_token
+
+  - name:
+    debug:
+      var:  dd_token.x_dd_auth_token
+
+# ADD DEV3 DISK TO THE ACTIVE TIER
+  - name: "( {{ddve_host}} ): Add dev3 to the active tier"
+    uri:
+      url: https://{{ddve_host}}:3009/api/v1/dd-systems/0/file-systems/block-storages
+      method: PUT
+      headers:
+        X-DD-AUTH-TOKEN: "{{dd_token.x_dd_auth_token}}"
+        Content-Type: "application/json"
+      force_basic_auth: no
+      validate_certs: no
+      body_format: json
+      body: |
+        {
+          "disks": [
+            "dev3"
+          ]
+        }
+      return_content: yes
+      status_code: 200
+    register: disks
+
+# CREATE THE FILESYSTEM
+  - name: "( {{ddve_host}} ): Create the filesystem"
+    uri:
+      url: https://{{ddve_host}}:3009/rest/v1.0/dd-systems/0/file-systems
+      method: PUT
+      headers:
+        X-DD-AUTH-TOKEN: "{{dd_token.x_dd_auth_token}}"
+        Content-Type: "application/json"
+      force_basic_auth: no
+      validate_certs: no
+      body_format: json
+      body: |
+        {
+          "operation": "create",
+          "write_zeros": false
+        }
+      timeout: 600
+      return_content: yes
+      status_code: 200
+    register: create_filesys
+
+# ENABLE THE FILESYSTEM
+  - name: "( {{ddve_host}} ): Enable the filesystem"
+    uri:
+      url: https://{{ddve_host}}:3009/rest/v1.0/dd-systems/0/file-systems
+      method: PUT
+      headers:
+        X-DD-AUTH-TOKEN: "{{dd_token.x_dd_auth_token}}"
+        Content-Type: "application/json"
+      force_basic_auth: no
+      validate_certs: no
+      body_format: json
+      body: |
+        {
+          "operation": "enable"
+        }
+      timeout: 600
+      return_content: yes
+      status_code: 200
+    register: enable_filesys
+
+# ENABLE THE DDBOOST PROTOCOL
+  - name: "( {{ddve_host}} ): Enable the boost protocol"
+    uri:
+      url: https://{{ddve_host}}:3009/rest/v1.0/dd-systems/0/protocols/ddboost
+      method: PUT
+      headers:
+        X-DD-AUTH-TOKEN: "{{dd_token.x_dd_auth_token}}"
+        Content-Type: "application/json"
+      force_basic_auth: no
+      validate_certs: no
+      body_format: json
+      body: |
+        {
+          "operation": "enable"
+        }
+      return_content: yes
+      status_code: 200
+    register: boost
+
+# SET THE SYSTEM PASSPHRASE
+  - name: "( {{ddve_host}} ): Set the system passphrase"
+    uri:
+      url: https://{{ddve_host}}:3009/rest/v3.0/dd-systems/0/systems
+      method: PUT
+      headers:
+        X-DD-AUTH-TOKEN: "{{dd_token.x_dd_auth_token}}"
+        Content-Type: "application/json"
+      force_basic_auth: no
+      validate_certs: no
+      body_format: json
+      body: |
+        {
+          "operation": "set_pphrase",
+          "pphrase_request": {
+            "new_pphrase": "{{ppdd_pwd}}"
+          }
+        }
+      return_content: yes
+      status_code: 200
+    register: passphrase
+
+# UPDATE THE SYSADMIN PASSWORD
+  - name: "( {{ddve_host}} ): Set the sysadmin password"
+    uri:
+      url: https://{{ddve_host}}:3009/rest/v1.0/dd-systems/0/users/{{ppdd_id}}
+      method: PUT
+      headers:
+        X-DD-AUTH-TOKEN: "{{dd_token.x_dd_auth_token}}"
+        Content-Type: "application/json"
+      force_basic_auth: no
+      validate_certs: no
+      body_format: json
+      body: |
+        {
+          "current_password": "{{ddve_old_pwd}}",
+          "new_password": "{{ppdd_pwd}}"
+        }
+      return_content: yes
+      status_code: 200
+    register: update_user
+
+# CREATE THE DDBOOST USER
+  - name: "( {{ddve_host}} ): Create the boost user"
+    uri:
+      url: https://{{ddve_host}}:3009/rest/v1.0/dd-systems/0/users
+      method: POST
+      headers:
+        X-DD-AUTH-TOKEN: "{{dd_token.x_dd_auth_token}}"
+        Content-Type: "application/json"
+      force_basic_auth: no
+      validate_certs: no
+      body_format: json
+      body: |
+        {
+          "name": "{{ddve_boost_user}}",
+          "role": "admin",
+          "password":"{{ppdd_pwd}}"
+        }
+      return_content: yes
+      status_code: 201
+    register: create_user
+
+# ASSIGN BOOST ACCESS
+  - name: "( {{ddve_host}} ): Assign user boost access"
+    uri:
+      url: https://{{ddve_host}}:3009/rest/v1.0/dd-systems/0/protocols/ddboost/users
+      method: PUT
+      headers:
+        X-DD-AUTH-TOKEN: "{{dd_token.x_dd_auth_token}}"
+        Content-Type: "application/json"
+      force_basic_auth: no
+      validate_certs: no
+      body_format: json
+      body: |
+        {
+          "user": "{{ddve_boost_user}}",
+          "operation": "assign"
+        }
+      return_content: yes
+      status_code: 200
+    register: assign_user
+
+# WAIT FOR HTTPS RESPONSE FROM AVAMAR
+  - name: "( {{ave_host}} ): Waiting for HTTPS connectivity."
+    wait_for:
+      host: "{{ave_host}}.{{ad_domain}}"
+      port: 443
+      state: started
+      delay: 1
+      sleep: 60
+      timeout: 600
+    register: waitforave1
+
+# AUTHENTICATE TO AVE SERVICE API
+  - name: "( {{ave_host}} ): Authenticate to Avamar services REST API"
+    uri:
+      url: https://{{ave_host}}:7543/avi/service/api/security/login
+      method: POST
+      force_basic_auth: no
+      validate_certs: no
+      return_content: yes
+      body_format: json
+      body: |
+        {
+          "username": "{{avamar_id}}",
+          "password": "{{ave_old_pwd}}"
+        }
+      status_code: 200
+    until: av_token.status == 200
+    register: av_token
+
+  - name:
+    debug:
+      var: av_token
+
+# GET AVAILABLE PACKAGES
+  - name: "( {{ave_host}} ): Available packages"
+    uri:
+      url: https://{{ave_host}}:7543/avi/service/api/packages
+      method: GET
+      headers:
+         cookie: "JSESSIONID={{av_token.cookies.JSESSIONID}}"
+         Content-Type: "application/json"
+      force_basic_auth: no
+      validate_certs: no
+      return_content: yes
+      body_format: json    
+      status_code: 200
+    register: software
+
+  - name: 
+    debug:
+      var: software.json.packages[0].title
+
+# INSTALL THE AVAMAR APPLICATION
+  - name: "( {{ave_host}} ): Install Avamar {{software.json.packages[0].title}}"
+    shell: | 
+        curl -ks https://{{ave_host}}:7543/avi/service/api/packages/install/{{software.json.packages[0].title}} \
+        -XPOST \
+        -H "content-type: multipart/form-data" \
+        -b "JSESSIONID={{av_token.cookies.JSESSIONID}}" \
+        -F userinput=" " \
+        -F input="{{ave_input}}"
+    args:
+      warn: false
+    register: install
+
+  - name: 
+    debug:
+      var: install.stdout
+
+  # # form-multipart NOT SUPPORTED UNTIL ANSIBLE 2.10, I'M STUCK AT 2.9 FOR RHEL DUE TO USING TOWER
+  # - name: "( {{ave_host}}.{{ad_domain}} ): Install Avamar {{software.json.packages[0].title}}"
+  #   uri:
+  #     url: https://{{ave_host}}:7543/avi/service/api/packages/install/{{software.json.packages[0].title}}
+  #     method: POST
+  #     headers:
+  #        cookie: "JSESSIONID={{av_token.cookies.JSESSIONID}}"
+  #        Content-Type: "form-multipart"
+  #     force_basic_auth: no
+  #     validate_certs: no
+  #     return_content: yes
+  #     body:
+  #       supportKey: Supp0rtPum6
+  #       userinput: /tmp/install.yml
+  #       input : "{{ave_input}}"
+  #     status_code: 200
+  #   register: install
+
+  # - name: 
+  #   debug:
+  #     var: install
+
+# MONITOR THE INSTALL OF AVAMAR
+  - name: "( {{ave_host}} ): Monitor intall process until complete"
+    uri:
+      url: https://{{ave_host}}:7543/avi/service/api/messages
+      method: GET
+      headers:
+         cookie: "JSESSIONID={{av_token.cookies.JSESSIONID}}"
+         Content-Type: "application/json"
+      force_basic_auth: no
+      validate_certs: no
+      return_content: yes
+      body_format: json    
+      status_code: 200
+    register: monitor
+    until: monitor.status == 200 and monitor.json.messages[ monitor.json | json_query(query) -1 ].progress == 100
+    vars:
+      query: length(messages)
+    retries: 720
+    delay: 5
+
+# LOGOUT TO AVE SERVICE API
+  - name: "( {{ave_host}} ): Logout of AVE REST API"
+    uri:
+      url: https://{{ave_host}}:7543/avi/service/api/security/logout
+      method: POST
+      headers:
+         cookie: "JSESSIONID={{av_token.cookies.JSESSIONID}}"
+         Content-Type: "application/json"
+      force_basic_auth: no
+      validate_certs: no
+      return_content: yes
+      body_format: json    
+      status_code: 200
+    register: av_logout
+
+  - name: 
+    debug:
+      var: av_logout
+
+# WAIT FOR SSH RESPONSE FROM AVAMAR  
+  - name: "( {{ave_host}} ): Waiting for SSH connectivity."
+    wait_for:
+      host: "{{ave_host}}.{{ad_domain}}"
+      port: 22
+      state: started
+      delay: 1
+      sleep: 60
+      timeout: 600
+    register: waitforave2
+
+# Avamar: Deploying Proxy Using Proxy deployment manager (PDM), fails at registration stage at 70%.
+# https://www.dell.com/support/kbdoc/en-ca/000168805/deploying-proxy-using-proxy-deployment-manager-pdm-fails-at-registration-stage-at-70
+  - name: "( {{ave_host}}.{{ad_domain}} ): Apply KB workaround: 000168805 workaround"
+    ansible.builtin.shell: |
+        /usr/local/avamar/bin/enable_secure_config.sh --undo --enable-all
+    become: yes
+    delegate_to: "{{ave_host}}"
+    register: workaround
+
+  - name: 
+    debug:
+      var: workaround.stdout_lines
+
+# UPDATE THE MCSERVER.XML FILE TO IGNORE THE VCENTER CERT
+  - name: "( {{ave_host}} ): Update the mcserver.xml to ignore the vcenter certificate."
+    shell: |
+        dpnctl stop mcs
+        sed -i 's/entry key="ignore_vc_cert" value="false" /entry key="ignore_vc_cert" value="true"/' /usr/local/avamar/var/mc/server_data/prefs/mcserver.xml
+        dpnctl start mcs
+    delegate_to: "{{ave_host}}"
+    register: mcserver
+
+  - name: 
+    debug:
+      var: mcserver.stdout_lines
+
+# WAIT FOR HTTPS RESPONSE FROM AVAMAR  
+  - name: "( {{ave_host}} ): Waiting for HTTPS connectivity."
+    wait_for:
+      host: "{{ave_host}}.{{ad_domain}}"
+      port: 443
+      state: started
+      delay: 1
+      sleep: 60
+      timeout: 600
+    register: waitforave3
+
+  - name: "( {{ave_host}} ): Create the oauth2 client"
+    uri:
+      url: https://{{ave_host}}/api/v1/oauth2/clients
+      method: POST
+      force_basic_auth: yes
+      validate_certs: no
+      return_content: yes
+      body_format: json
+      body: |
+          {
+            "accessTokenValiditySeconds": 3600,
+            "authorizedGrantTypes": [
+                "password"
+            ],
+            "autoApproveScopes": [
+                "all"
+            ],
+            "clientId": "{{avamar_oauth2_id}}",
+            "clientName": "{{avamar_oauth2_id}}",
+            "clientSecret": "{{avamar_oauth2_pwd}}",
+            "redirectUris": [
+                "https://{{ave_host}}/callback"
+            ],
+            "refreshTokenValiditySeconds": 43200,
+            "scopes": [
+                "read",
+                "write"
+            ]
+          }
+      url_username: "{{avamar_id}}"
+      url_password: '{{avamar_pwd}}'
+      status_code: 200
+    register: oauth2
+
+  - name: "( {{ave_host}} ): Get the Access Token for the OAuth2 Client"
+    uri:
+      url: https://{{ave_host}}/api/oauth/token
+      method: POST
+      force_basic_auth: yes
+      validate_certs: no
+      return_content: yes
+      body_format: form-urlencoded
+      body: 'grant_type=password&scope=write&username={{avamar_id}}&password={{avamar_pwd}}'
+      url_username: "{{avamar_oauth2_id}}"
+      url_password: '{{avamar_oauth2_pwd}}'
+      status_code: 200
+    register: token
+
+  - name: 
+    debug:
+      var: token.json
+
+# ADD VCENTER TO THE AVAMAR CONFIGURATION
+  - name: "( {{ave_host}} ): Add vCenter"
+    uri:
+      url: https://{{ave_host}}/api/v1/virtualcenters
+      headers:
+        Authorization: "Bearer {{token.json.access_token}}"
+        Content-Type: "application/json"
+      method: POST
+      validate_certs: no
+      return_content: yes
+      body_format: json
+      body: |
+        {
+          "contact": {
+              "email": "",
+              "phone": "",
+              "name": "",
+              "location": "",
+              "notes": ""
+          },
+          "name": "{{vcenter_host}}",
+          "password": "{{vcenter_pwd}}",
+          "username": "{{vcenter_id}}",
+          "port": 443,
+          "domain": "/",
+          "ruleDomainMapping": {},
+          "cbtEnabled": false,
+          "ruleEnabled": false
+        }
+      status_code: 202
+    register: add_vc
+  
+  - name:
+    debug:
+      var:  add_vc.json
+
+# MONITOR ADDING VCENTER
+  - name: "( {{ave_host}} ): Monitor activity {{add_vc.json.id}}"
+    uri:
+      url: https://{{ave_host}}/api/v1/tasks/{{add_vc.json.id}}
+      headers:
+        Authorization: "Bearer {{token.json.access_token}}"
+        Content-Type: "application/json"
+      method: GET
+      validate_certs: no
+      return_content: yes
+      body_format: json
+      status_code: 200
+    register: monitor1
+    until: monitor1.status == 200 and monitor1.json.done == true
+    retries: 30
+    delay: 10
+  
+  - name: 
+    debug:
+      var:  monitor1.json
+
+# ADD POWERPROTECT DD TO THE AVAMAR CONFIGURATION
+  - name: "( {{ave_host}} ): Add PowerProtect DD"
+    uri:
+      url: https://{{ave_host}}/api/v1/datadomains
+      headers:
+        Authorization: "Bearer {{token.json.access_token}}"
+        Content-Type: "application/json"
+      method: POST
+      validate_certs: no
+      return_content: yes
+      body_format: json
+      body: |
+        {
+          "defaultClientMap": true,
+          "defaultForGsan": true,
+          "maxStreams": 20,
+          "snmpVersion": 2,
+          "snmpGetSetPort": 161,
+          "snmpTrapPort": 163,
+          "ipv4Hostname": "{{ddve_host}}.{{ad_domain}}",
+          "username": "{{ddve_boost_user}}",
+          "password": "{{ppdd_pwd}}",
+          "snmpCommunity": "{{ddve_community_string}}",
+          "snmpUserName": null,
+          "snmpAuthPassphrase": null,
+          "snmpPrivPassphrase": null,
+          "authtype": "credential"
+        }
+      status_code: 202
+    register: add_dd
+  
+  - name: 
+    debug:
+      var:  add_dd.json
+
+# MONITOR ADDING THE POWERPROTECT DD
+  - name: "( {{ave_host}} ): Monitor activity {{add_dd.json.id}}"
+    uri:
+      url: https://{{ave_host}}/api/v1/tasks/{{add_dd.json.id}}
+      headers:
+        Authorization: "Bearer {{token.json.access_token}}"
+        Content-Type: "application/json"
+      method: GET
+      validate_certs: no
+      return_content: yes
+      body_format: json
+      status_code: 200
+    register: monitor2
+    until: monitor2.status == 200 and monitor2.json.done == true
+    retries: 30
+    delay: 10
+  
+  - name: 
+    debug:
+      var:  monitor2.json.result
+
+# UPDATE VMWARE WINDOWS AND LINUX DATASETS TO BACKUP TO POWERPROTECT DD
+  - name: "( {{ave_host}} ): Direct backups for the vMware datasets (Windows, Linux) ==> {{ddve_host}}"
+    uri:
+      url: https://{{ave_host}}/api/v1/datasets/VMWARE:SNAPID
+      headers:
+        Authorization: "Bearer {{token.json.access_token}}"
+        Content-Type: "application/json"
+      method: PUT
+      validate_certs: no
+      return_content: yes
+      body_format: json
+      body: "{{ave_plugins}}"
+      status_code: 200
+    register: dataset
+  
+  - name: 
+    debug:
+      var:  dataset.json

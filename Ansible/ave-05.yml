@@ -1,0 +1,74 @@
+---
+- name: "Run an ADHOC policy based backup for virtual machines"
+  hosts: localhost
+  collections:
+    - community.general
+  gather_facts: false
+  become: no
+   
+  vars:
+  vars_files:
+    - vars/credentials.yml
+
+  tasks:
+# GET THE ACCESS TOKEN FOR THE OAUTH2 USER
+  - name: "( {{ave_host}} ): Get the Access Token for the OAuth2 Client"
+    uri:
+      url: https://{{ave_host}}/api/oauth/token
+      method: POST
+      force_basic_auth: yes
+      validate_certs: no
+      return_content: yes
+      body_format: form-urlencoded
+      body: 'grant_type=password&scope=write&username={{avamar_id}}&password={{avamar_pwd}}'
+      url_username: "{{avamar_oauth2_id}}"
+      url_password: '{{avamar_oauth2_pwd}}'
+      status_code: 200
+    register: token
+
+  - name: 
+    debug:
+      var: token.json.access_token
+
+# GET THE BACKUP POLICY
+  - name: "( {{ave_host}} ): Get the backup policy"
+    uri:
+      url: https://{{ave_host}}/api/v1/groups?domain=/{{vcenter_host}}&filter=name==Policy-VM*
+      headers:
+        Authorization: "Bearer {{token.json.access_token}}"
+        Content-Type: "application/json"
+      method: GET
+      validate_certs: no
+      return_content: yes
+      body_format: json
+      status_code: 200
+    register: policy
+
+  # - name: 
+  #   debug:
+  #     msg: |
+  #         {{item}}
+  #   vars:
+  #     item: "{{ policy.json.content | map(attribute='id') | list }}"
+
+
+# INVOKE THE BACKUP
+  - name: "( {{ave_host}} ): Backup VMware clients"
+    uri:
+      url: https://{{ave_host}}/api/v1/groups/backup-groups/{{item}}/backup
+      headers:
+        Authorization: "Bearer {{token.json.access_token}}"
+        Content-Type: "application/json"
+      method: POST
+      validate_certs: no
+      return_content: yes
+      body_format: json
+      body: |
+        {"dynamicValues":[]}
+      status_code: 200
+    register: backup_clients
+    with_items: "{{ policy.json.content | map(attribute='id') | list }}"
+
+  - name: 
+    debug:
+      var:  backup_clients.json

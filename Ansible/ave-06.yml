@@ -1,0 +1,49 @@
+---
+- name: "Deploy Windows file system agents"
+  hosts: "{{ ansible_play_batch }}"
+  collections:
+    - community.general
+  gather_facts: true
+  become: no
+   
+  vars:
+  vars_files:
+    - vars/credentials.yml
+
+  tasks:
+# CHECK TO SEE IF THE AGENT IS INSTALLED
+  - name: Check to see if the agent is installed
+    win_shell: |
+        [object]$Agent = Get-WmiObject -Class Win32_Product | Where-Object {$_.name -match 'EMC Avamar for Windows'}
+        [bool]($Agent.name -match "^EMC Avamar for Windows")
+    when: ansible_facts['os_family'] == "Windows"
+    register: installed
+
+# DOWNLOAD THE AVAMAR CLIENT AGENT
+  - name: Download Avamar File System Agent
+    win_get_url:
+      url: https://{{ave_host}}.{{ad_domain}}/dtlt/downloadArtifact?item=L0RQTkluc3RhbGxzL2Rvd25sb2Fkcy9XSU42NC9BdmFtYXJDbGllbnQtd2luZG93cy14ODZfNjQtMTkuNC4xMDAtMTI0Lm1zaQ==&doc=false
+      dest: C:\Windows\Temp\{{ave_client}}
+      validate_certs: no
+    when: ansible_facts['os_family'] == "Windows" and installed.stdout_lines[0] == "False"
+    register: fsa_agent
+
+# PERFROM A SILENT INSTALL OF THE FILE SYSTEM AGENT
+  - name: Install EMC Avamar for Windows
+    win_package:
+      path: C:\Windows\Temp\{{ave_client}}
+      product_id: '{BCC31323-2507-4D2A-85D0-BEFF3459E180}'
+      state: present
+      arguments:
+      - SERVER={{ave_host}}.{{ad_domain}}
+      - DOMAIN={{ave_domain}}
+      - UICOMPONENT=1
+      - PROGRESSBAR=false
+      - BALLOONMESSAGE=false
+      - BACKUPREMINDER=Never
+    when: ansible_facts['os_family'] == "Windows" and installed.stdout_lines[0] == "False"
+    register: fsa_install
+  
+  - name:
+    debug:
+      var: fsa_install

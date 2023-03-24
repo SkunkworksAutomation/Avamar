@@ -1,0 +1,161 @@
+---
+- name: "Deploy x2 Avamar vProxies to vCenter"
+  hosts: localhost
+  collections:
+    - community.general
+  gather_facts: false
+  become: no
+   
+  vars:
+  vars_files:
+    - vars/credentials.yml
+
+  tasks:
+# GET THE ACCESS TOKEN FOR THE OAUTH2 USER
+  - name: "( {{ave_host}} ): Get the Access Token for the OAuth2 Client"
+    uri:
+      url: https://{{ave_host}}/api/oauth/token
+      method: POST
+      force_basic_auth: yes
+      validate_certs: no
+      return_content: yes
+      body_format: form-urlencoded
+      body: 'grant_type=password&scope=write&username={{avamar_id}}&password={{avamar_pwd}}'
+      url_username: "{{avamar_oauth2_id}}"
+      url_password: '{{avamar_oauth2_pwd}}'
+      status_code: 200
+    register: token
+
+  - name: 
+    debug:
+      var: token.json.access_token
+
+# GET THE VCENTER INFORMATION
+  - name: "( {{ave_host}} ): Get the vcenter information"
+    uri:
+      url: https://{{ave_host}}/api/v1/virtualcenters
+      headers:
+        Authorization: "Bearer {{token.json.access_token}}"
+        Content-Type: "application/json"
+      method: GET
+      validate_certs: no
+      return_content: yes
+      body_format: json
+      status_code: 200
+    register: vcenter
+
+  - name: 
+    debug:
+      var:  vcenter.json.content[0].cid
+
+# DEPLOY THE VCENTER PROXY
+  - name: "( {{ave_host}} ): Deploy vCenter proxy {{ave_proxy_host1}}"
+    uri:
+      url: https://{{ave_host}}/api/v1/virtualcenters/{{vcenter.json.content[0].cid}}/proxies
+      headers:
+        Authorization: "Bearer {{token.json.access_token}}"
+        Content-Type: "application/json"
+      method: POST
+      validate_certs: no
+      return_content: yes
+      body_format: json
+      body: |
+       {
+           "datastore": "{{vcenter_ds}}",
+            "dns": "{{ave_dns}}",
+            "domain": "/clients",
+            "gateway": "{{ave_gateway}}",
+            "host": "{{vcenter_esx1}}",
+            "ip": "{{ave_proxy_ip1}}",
+            "name": "{{ave_proxy_host1}}",
+            "clsName": "pdm-new-proxy-node",
+            "netmask": "{{ave_proxy_netmask}}",
+            "network": {
+                "type": "Network",
+                "val": "{{vcenter_network}}"
+            },
+            "ntp": "{{ave_ntp}}"
+        }
+      status_code: 202
+    register: addproxy1
+      
+  - name: 
+    debug:
+      var:  addproxy1.content
+
+# DEPLOY THE VCENTER PROXY
+  - name: "( {{ave_host}} ): Deploy vCenter proxy {{ave_proxy_host2}}"
+    uri:
+      url: https://{{ave_host}}/api/v1/virtualcenters/{{vcenter.json.content[0].cid}}/proxies
+      headers:
+        Authorization: "Bearer {{token.json.access_token}}"
+        Content-Type: "application/json"
+      method: POST
+      validate_certs: no
+      return_content: yes
+      body_format: json
+      body: |
+        {
+           "datastore": "{{vcenter_ds}}",
+            "dns": "{{ave_dns}}",
+            "domain": "/clients",
+            "gateway": "{{ave_gateway}}",
+            "host": "{{vcenter_esx2}}",
+            "ip": "{{ave_proxy_ip2}}",
+            "name": "{{ave_proxy_host2}}",
+            "clsName": "pdm-new-proxy-node",
+            "netmask": "{{ave_proxy_netmask}}",
+            "network": {
+                "type": "Network",
+                "val": "{{vcenter_network}}"
+            },
+            "ntp": "{{ave_ntp}}"
+        }
+      status_code: 202
+    register: addproxy2
+
+  - name: 
+    debug:
+      var:  addproxy2.content
+
+# MONITOR ADDING THE POWERPROTECT DD
+  - name: "( {{ave_host}} ): Monitor activity {{addproxy1.json.id}}"
+    uri:
+      url: https://{{ave_host}}/api/v1/virtualcenters/{{vcenter.json.content[0].cid}}/tasks/?filter=id=={{addproxy1.json.id}}
+      headers:
+        Authorization: "Bearer {{token.json.access_token}}"
+        Content-Type: "application/json"
+      method: GET
+      validate_certs: no
+      return_content: yes
+      body_format: json
+      status_code: 200
+    register: monitor3
+    until: monitor3.status == 200 and monitor3.json.content[0].running == false
+    retries: 120
+    delay: 10
+  
+  - name: 
+    debug:
+      var:  monitor3.json.content[0]
+
+# MONITOR ADDING THE POWERPROTECT DD
+  - name: "( {{ave_host}} ): Monitor activity {{addproxy2.json.id}}"
+    uri:
+      url: https://{{ave_host}}/api/v1/virtualcenters/{{vcenter.json.content[0].cid}}/tasks/?filter=id=={{addproxy2.json.id}}
+      headers:
+        Authorization: "Bearer {{token.json.access_token}}"
+        Content-Type: "application/json"
+      method: GET
+      validate_certs: no
+      return_content: yes
+      body_format: json
+      status_code: 200
+    register: monitor4
+    until: monitor4.status == 200 and monitor4.json.content[0].running == false
+    retries: 120
+    delay: 10
+  
+  - name: 
+    debug:
+      var:  monitor4.json.content[0]

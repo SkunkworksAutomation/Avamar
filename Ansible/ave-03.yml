@@ -1,0 +1,339 @@
+---
+- name: "Create x3 policies and rules for virtual machine protection"
+  hosts: localhost
+  collections:
+    - community.general
+  gather_facts: false
+  become: no
+   
+  vars:
+  vars_files:
+    - vars/credentials.yml
+
+  tasks:
+  - name: "( {{ave_host}} ): Get the Access Token for the OAuth2 Client"
+    uri:
+      url: https://{{ave_host}}/api/oauth/token
+      method: POST
+      force_basic_auth: yes
+      validate_certs: no
+      return_content: yes
+      body_format: form-urlencoded
+      body: 'grant_type=password&scope=write&username={{avamar_id}}&password={{avamar_pwd}}'
+      url_username: "{{avamar_oauth2_id}}"
+      url_password: '{{avamar_oauth2_pwd}}'
+      status_code: 200
+    register: token
+
+  - name: 
+    debug:
+      var: token.json.access_token
+
+# CREATE RULES
+  - name: "( {{ave_host}} ): Create rule Rule-VM01"
+    uri:
+      url: https://{{ave_host}}/api/v1/rules
+      headers:
+        Authorization: "Bearer {{token.json.access_token}}"
+        Content-Type: "application/json"
+      method: POST
+      validate_certs: no
+      return_content: yes
+      body_format: json
+      body: |
+         {
+            "domainFqdn": "/{{vcenter_host}}",
+            "expressions": [
+                {
+                    "keyName": "name",
+                    "keyType": "STRING",
+                    "operators": [
+                        {
+                            "operatorName": "EQUALS",
+                            "operatorDescription": "equals"
+                        },
+                        {
+                            "operatorName": "DOES_NOT_EQUAL",
+                            "operatorDescription": "does not equal"
+                        },
+                        {
+                            "operatorName": "CONTAINS",
+                            "operatorDescription": "contains"
+                        },
+                        {
+                            "operatorName": "DOES_NOT_CONTAIN",
+                            "operatorDescription": "does not contain"
+                        },
+                        {
+                            "operatorName": "BEGINS_WITH",
+                            "operatorDescription": "begins with"
+                        },
+                        {
+                            "operatorName": "ENDS_WITH",
+                            "operatorDescription": "ends with"
+                        },
+                        {
+                            "operatorName": "MATCHES_REGULAR_EXPRESSION",
+                            "operatorDescription": "matches regular expression"
+                        }
+                    ],
+                    "operatorName": "MATCHES_REGULAR_EXPRESSION",
+                    "value": "vc1-ubu-0[1-3]",
+                    "vmTagCategoryValue": ""
+                }
+            ],
+            "matchType": "AND",
+            "name": "Rule-VM01"
+          }
+      status_code: 201
+    register: rule1
+
+# CREATE POLICIES
+  - name: "( {{ave_host}} ): Create policy Policy-VM01"
+    uri:
+      url: https://{{ave_host}}/api/v1/groups/backup-groups
+      headers:
+        Authorization: "Bearer {{token.json.access_token}}"
+        Content-Type: "application/json"
+      method: POST
+      validate_certs: no
+      return_content: yes
+      body_format: json
+      body: |
+         {
+            "autoProxyMapping": true,
+            "members": [],
+            "datasetId": "VMWARE:SNAPID",
+            "domainFqdn": "/{{vcenter_host}}",
+            "enabled": true,
+            "ruleEnabled": true,
+            "encryption": "HIGH",
+            "name": "Policy-VM01",
+            "overrideSchedule": "none",
+            "proxyIds": [],
+            "retentionId": "Default:POLICYID",
+            "scheduleId": "default:DAILY:SCHEDULEDID",
+            "ruleId": {{rule1.json.id}},
+            "cloudDrEnabled": false,
+            "cloudDrPolicy": {
+                "cloudTargetId": "",
+                "retentionType": "DAYS",
+                "retentionAmount": "30",
+                "rpoType": "DAYS",
+                "rpoAmount": "1",
+                "state": "disabled"
+            },
+            "memberType": "NOT_SPECIFIED"
+          }
+      status_code: 201
+    register: add_policy1
+
+  - name: 
+    debug:
+      var:  add_policy1.json
+
+# CREATE RULES
+  - name: "( {{ave_host}} ): Create rule Rule-VM02"
+    uri:
+      url: https://{{ave_host}}/api/v1/rules
+      headers:
+        Authorization: "Bearer {{token.json.access_token}}"
+        Content-Type: "application/json"
+      method: POST
+      validate_certs: no
+      return_content: yes
+      body_format: json
+      body: |
+         {
+            "domainFqdn": "/{{vcenter_host}}",
+            "expressions": [
+                {
+                    "keyName": "name",
+                    "keyType": "STRING",
+                    "operators": [
+                        {
+                            "operatorName": "EQUALS",
+                            "operatorDescription": "equals"
+                        },
+                        {
+                            "operatorName": "DOES_NOT_EQUAL",
+                            "operatorDescription": "does not equal"
+                        },
+                        {
+                            "operatorName": "CONTAINS",
+                            "operatorDescription": "contains"
+                        },
+                        {
+                            "operatorName": "DOES_NOT_CONTAIN",
+                            "operatorDescription": "does not contain"
+                        },
+                        {
+                            "operatorName": "BEGINS_WITH",
+                            "operatorDescription": "begins with"
+                        },
+                        {
+                            "operatorName": "ENDS_WITH",
+                            "operatorDescription": "ends with"
+                        },
+                        {
+                            "operatorName": "MATCHES_REGULAR_EXPRESSION",
+                            "operatorDescription": "matches regular expression"
+                        }
+                    ],
+                    "operatorName": "MATCHES_REGULAR_EXPRESSION",
+                    "value": "vc1-ubu-04",
+                    "vmTagCategoryValue": ""
+                }
+            ],
+            "matchType": "AND",
+            "name": "Rule-VM02"
+          }
+      status_code: 201
+    register: rule2
+
+# CREATE POLICIES
+  - name: "( {{ave_host}} ): Create policy Policy-VM02"
+    uri:
+      url: https://{{ave_host}}/api/v1/groups/backup-groups
+      headers:
+        Authorization: "Bearer {{token.json.access_token}}"
+        Content-Type: "application/json"
+      method: POST
+      validate_certs: no
+      return_content: yes
+      body_format: json
+      body: |
+         {
+            "autoProxyMapping": true,
+            "members": [],
+            "datasetId": "VMWARE:SNAPID",
+            "domainFqdn": "/{{vcenter_host}}",
+            "enabled": true,
+            "ruleEnabled": true,
+            "encryption": "HIGH",
+            "name": "Policy-VM02",
+            "overrideSchedule": "none",
+            "proxyIds": [],
+            "retentionId": "Default:POLICYID",
+            "scheduleId": "default:DAILY:SCHEDULEDID",
+            "ruleId": {{rule2.json.id}},
+            "cloudDrEnabled": false,
+            "cloudDrPolicy": {
+                "cloudTargetId": "",
+                "retentionType": "DAYS",
+                "retentionAmount": "30",
+                "rpoType": "DAYS",
+                "rpoAmount": "1",
+                "state": "disabled"
+            },
+            "memberType": "NOT_SPECIFIED"
+          }
+      status_code: 201
+    register: add_policy2
+
+  - name: 
+    debug:
+      var:  add_policy2.json
+
+# CREATE RULES
+  - name: "( {{ave_host}} ): Create rule Rule-VM03"
+    uri:
+      url: https://{{ave_host}}/api/v1/rules
+      headers:
+        Authorization: "Bearer {{token.json.access_token}}"
+        Content-Type: "application/json"
+      method: POST
+      validate_certs: no
+      return_content: yes
+      body_format: json
+      body: |
+         {
+            "domainFqdn": "/{{vcenter_host}}",
+            "expressions": [
+                {
+                    "keyName": "name",
+                    "keyType": "STRING",
+                    "operators": [
+                        {
+                            "operatorName": "EQUALS",
+                            "operatorDescription": "equals"
+                        },
+                        {
+                            "operatorName": "DOES_NOT_EQUAL",
+                            "operatorDescription": "does not equal"
+                        },
+                        {
+                            "operatorName": "CONTAINS",
+                            "operatorDescription": "contains"
+                        },
+                        {
+                            "operatorName": "DOES_NOT_CONTAIN",
+                            "operatorDescription": "does not contain"
+                        },
+                        {
+                            "operatorName": "BEGINS_WITH",
+                            "operatorDescription": "begins with"
+                        },
+                        {
+                            "operatorName": "ENDS_WITH",
+                            "operatorDescription": "ends with"
+                        },
+                        {
+                            "operatorName": "MATCHES_REGULAR_EXPRESSION",
+                            "operatorDescription": "matches regular expression"
+                        }
+                    ],
+                    "operatorName": "MATCHES_REGULAR_EXPRESSION",
+                    "value": "vc1-ubu-0[5-6]",
+                    "vmTagCategoryValue": ""
+                }
+            ],
+            "matchType": "AND",
+            "name": "Rule-VM03"
+          }
+      status_code: 201
+    register: rule3
+
+# CREATE POLICIES
+  - name: "( {{ave_host}} ): Create policy Policy-VM03"
+    uri:
+      url: https://{{ave_host}}/api/v1/groups/backup-groups
+      headers:
+        Authorization: "Bearer {{token.json.access_token}}"
+        Content-Type: "application/json"
+      method: POST
+      validate_certs: no
+      return_content: yes
+      body_format: json
+      body: |
+         {
+            "autoProxyMapping": true,
+            "members": [],
+            "datasetId": "VMWARE:SNAPID",
+            "domainFqdn": "/{{vcenter_host}}",
+            "enabled": true,
+            "ruleEnabled": true,
+            "encryption": "HIGH",
+            "name": "Policy-VM03",
+            "overrideSchedule": "none",
+            "proxyIds": [],
+            "retentionId": "Default:POLICYID",
+            "scheduleId": "default:DAILY:SCHEDULEDID",
+            "ruleId": {{rule3.json.id}},
+            "cloudDrEnabled": false,
+            "cloudDrPolicy": {
+                "cloudTargetId": "",
+                "retentionType": "DAYS",
+                "retentionAmount": "30",
+                "rpoType": "DAYS",
+                "rpoAmount": "1",
+                "state": "disabled"
+            },
+            "memberType": "NOT_SPECIFIED"
+          }
+      status_code: 201
+    register: add_policy3
+
+  - name: 
+    debug:
+      var:  add_policy3.json

@@ -1,0 +1,124 @@
+---
+- name: "Add vCenter clients vc1-ubu-0[1-6]"
+  hosts: localhost
+  collections:
+    - community.general
+  gather_facts: false
+  become: no
+   
+  vars:
+  vars_files:
+    - vars/credentials.yml
+
+  tasks:
+# GET THE ACCESS TOKEN FOR THE OAUTH2 USER
+  - name: "( {{ave_host}} ): Get the Access Token for the OAuth2 Client"
+    uri:
+      url: https://{{ave_host}}/api/oauth/token
+      method: POST
+      force_basic_auth: yes
+      validate_certs: no
+      return_content: yes
+      body_format: form-urlencoded
+      body: 'grant_type=password&scope=write&username={{avamar_id}}&password={{avamar_pwd}}'
+      url_username: "{{avamar_oauth2_id}}"
+      url_password: '{{avamar_oauth2_pwd}}'
+      status_code: 200
+    register: token
+
+  - name: 
+    debug:
+      var: token.json.access_token
+
+# GET THE VCENTER INFORMATION
+  - name: "( {{ave_host}} ): Get the vcenter information"
+    uri:
+      url: https://{{ave_host}}/api/v1/virtualcenters
+      headers:
+        Authorization: "Bearer {{token.json.access_token}}"
+        Content-Type: "application/json"
+      method: GET
+      validate_certs: no
+      return_content: yes
+      body_format: json
+      status_code: 200
+    register: vcenter
+
+  - name: 
+    debug:
+      var:  vcenter.json.content[0].cid
+
+# GET THE VCENTER ENTITIES INFORMATION
+  - name: "( {{ave_host}} ): Get the vcenter entities information"
+    uri:
+      url: https://{{ave_host}}/api/v1/virtualcenters/{{vcenter.json.content[0].cid}}/entities?path=/{{vcenter_dc}}/vm&type=VirtualMachine&recursive=true&hostView=false&search=&fields=children
+      headers:
+        Authorization: "Bearer {{token.json.access_token}}"
+        Content-Type: "application/json"
+      method: GET
+      validate_certs: no
+      return_content: yes
+      body_format: json
+      status_code: 200
+    register: entities
+
+  - name: 
+    debug:
+      var:  entities.json
+
+# ADD VCENTER CLIENTS
+  - name: "( {{ave_host}} ): Add VMware clients"
+    uri:
+      url: https://{{ave_host}}/api/v1/virtualcenters/{{vcenter.json.content[0].cid}}/clients
+      headers:
+        Authorization: "Bearer {{token.json.access_token}}"
+        Content-Type: "application/json"
+      method: POST
+      validate_certs: no
+      return_content: yes
+      body_format: json
+      body: |
+         {
+            "contact":
+            {
+              "email":"",
+              "location":"",
+              "name":"","notes":"",
+              "phone":""
+            },
+            "containerInclusionType":"DYNAMIC",
+            "domain":"/{{vcenter_host}}/VirtualMachines",
+            "cbtEnabled":true,
+            "entityIds": {{entities.json | to_json | from_json | json_query(query)}},
+            "recursiveProtection":false,
+            "viewType":"VM_TEMPLATE"
+          }
+      status_code: 202
+    register: add_vm_clients
+    vars:
+      query: children[?contains(name,'vc1-ubu') && name !='vc1-ubu-07'] | [].id
+
+  - name: 
+    debug:
+      var:  add_vm_clients.json
+
+# MONITOR ADDING CLIENTS
+  - name: "( {{ave_host}} ): Monitor task {{add_vm_clients.json.id}}"
+    uri:
+      url: https://{{ave_host}}/api/v1/tasks/{{add_vm_clients.json.id}}
+      headers:
+        Authorization: "Bearer {{token.json.access_token}}"
+        Content-Type: "application/json"
+      method: GET
+      validate_certs: no
+      return_content: yes
+      body_format: json
+      status_code: 200
+    register: monitor
+    until: monitor.status == 200 and monitor.json.done == true
+    retries: 30
+    delay: 10
+
+  - name: 
+    debug:
+      var:  monitor.json

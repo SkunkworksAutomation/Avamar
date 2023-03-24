@@ -1,0 +1,77 @@
+---
+- name: "Deploy Windows MSSQL agents"
+  hosts: "{{ ansible_play_batch }}"
+  collections:
+    - community.general
+  gather_facts: true
+  become: no
+   
+  vars:
+  vars_files:
+    - vars/credentials.yml
+
+  tasks:
+# DOWNLOAD THE ELDOS CERTIFICATE FROM ANSIBLE
+  - name: Copy EldoS certificate to server
+    win_copy:
+      src: /var/lib/awx/projects/common/certs/EldoS.cer
+      dest: C:\Windows\Temp\EldoS.cer
+
+# IMPORT THE ELDOS CERTIFICATE INTO TRUSTED PUBLISHERS
+  - name: Import EldoS Certificate into Trusted Publishers
+    win_shell: |
+          Import-Certificate -FilePath 'C:\Windows\Temp\EldoS.cer' -CertStoreLocation 'Cert:\LocalMachine\TrustedPublisher'
+    register: import_cert
+
+  - name:
+    debug:
+      var: import_cert.stdout_lines
+
+# DOWNLOAD THE AVAMAR CLIENT AGENT
+  - name: Download Avamar File System Agent
+    win_get_url:
+      url: https://{{ave_host}}.{{ad_domain}}/dtlt/downloadArtifact?item=L0RQTkluc3RhbGxzL2Rvd25sb2Fkcy9XSU42NC9BdmFtYXJDbGllbnQtd2luZG93cy14ODZfNjQtMTkuNC4xMDAtMTI0Lm1zaQ==&doc=false
+      dest: C:\Windows\Temp\{{ave_client}}
+      validate_certs: no
+    register: fsa_agent
+
+# DOWNLOAD THE AVAMAR SQL CLIENT AGENT
+  - name: Download Avamar SQL Agent
+    win_get_url:
+      url: https://{{ave_host}}.{{ad_domain}}/dtlt/downloadArtifact?item=L0RQTkluc3RhbGxzL2Rvd25sb2Fkcy9XSU42NC9BdmFtYXJTUUwtd2luZG93cy14ODZfNjQtMTkuNC4xMDAtMTI0LmV4ZQ==&doc=false
+      dest: C:\Windows\Temp\{{sql_client}}
+      validate_certs: no
+    register: sql_agent
+    
+# PERFROM A SILENT INSTALL OF THE FILE SYSTEM AGENT
+  - name: Install EMC Avamar for Windows
+    win_package:
+      path: C:\Windows\Temp\{{ave_client}}
+      product_id: '{BCC31323-2507-4D2A-85D0-BEFF3459E180}'
+      state: present
+      arguments:
+      - SERVER={{ave_host}}.{{ad_domain}}
+      - DOMAIN=/clients
+      - UICOMPONENT=1
+      - PROGRESSBAR=false
+      - BALLOONMESSAGE=false
+      - BACKUPREMINDER=Never
+    register: fsa_install
+  
+  - name:
+    debug:
+      var: fsa_install  
+
+# PERFROM A SILENT INSTALL OF THE AGENT
+  - name: Install EMC Avamar Backup Plug-in for SQL
+    win_package:
+      path: C:\Windows\Temp\{{sql_client}}
+      product_id: '{AC6C0BEB-FBFA-4944-9CE3-28305A5AE73B}'
+      state: present
+      arguments: 
+      - /q
+    register: sql_install
+  
+  - name:
+    debug:
+      var: sql_install
