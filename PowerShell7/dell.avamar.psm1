@@ -116,11 +116,31 @@ function get-clients {
                 -ContentType 'application/json' `
                 -Headers ($AuthObject.token) `
                 -SkipCertificateCheck
+
                 $Results += $Pages.content
             } # END FOR
         } else {
             $Results = $Query.content
         }
         return $Results;
+    } # END PROCESS
+} # END FUNCTION
+
+function get-checkpoints {
+    [CmdletBinding()]
+    param (
+    )
+    begin {}
+    process {
+
+        # GET ATTACHED DATA DOMAIN SYSTEMS
+        $Query = Invoke-RestMethod `
+        -Uri "$($AuthObject.server)/checkpoints" `
+        -Method GET `
+        -ContentType 'application/json' `
+        -Headers ($AuthObject.token) `
+        -SkipCertificateCheck
+        
+        return $Query
     } # END PROCESS
 } # END FUNCTION
