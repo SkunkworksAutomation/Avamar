@@ -9,7 +9,7 @@ $avamar = 'ave-02.vcorp.local'
 connect-restapi -Server $avamar
 
 <#
-   GET CLIENTS
+   GET CHECKPOINTS
 #>
 
 $query = get-checkpoints

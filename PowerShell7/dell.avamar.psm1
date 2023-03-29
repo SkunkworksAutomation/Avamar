@@ -144,3 +144,22 @@ function get-checkpoints {
         return $Query
     } # END PROCESS
 } # END FUNCTION
+
+function get-systemevents {
+    [CmdletBinding()]
+    param (
+    )
+    begin {}
+    process {
+
+        # GET ATTACHED DATA DOMAIN SYSTEMS
+        $Query = Invoke-RestMethod `
+        -Uri "$($AuthObject.server)/events/merged-events" `
+        -Method GET `
+        -ContentType 'application/json' `
+        -Headers ($AuthObject.token) `
+        -SkipCertificateCheck
+        
+        return $Query
+    } # END PROCESS
+} # END FUNCTION
