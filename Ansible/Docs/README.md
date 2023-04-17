@@ -1,5 +1,5 @@
 | Task    | Description                                                                |
-| ------- |:--------------------------------------------------------------------------:|
+| ------- |:---------------------------------------------------------------------------|
 | AVE-01  | Deploy Avamar, PowerProtect DD joined together with vCenter                |
 | AVE-02  | Deploy x2 Avamar vProxies to vCenter                                       |
 | AVE-03  | Create x3 policies and rules for virtual machine protection                |
