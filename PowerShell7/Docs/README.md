@@ -12,4 +12,4 @@
         * Task-01: example query for powerprotect dd systems
         * Task-02: example query for clients
         * Task-03: example query for valid and invalid system checkpoints
-        * Task-04: example query for nerged system events
+        * Task-04: example query for merged system events
