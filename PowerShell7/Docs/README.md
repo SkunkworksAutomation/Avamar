@@ -1,6 +1,6 @@
-# Scripts (API version 19.12):
+# Scripts (API version 19.4):
 ## Modules: 
-* dell.avamar.psm1 (API version 19.4)
+* dell.avamar.psm1
     * PowerShell7 module that covers basic interaction with the PowerProtect Data Manager REST API
     * Functions
         * connect-restapi: method to request a bearer token
