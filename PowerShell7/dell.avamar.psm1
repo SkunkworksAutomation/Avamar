@@ -39,7 +39,12 @@ function connect-restapi {
                 )
             )
         )
-        $body = "grant_type=password&scope=write&username=$($admin.username)&password=$(ConvertFrom-SecureString -SecureString $admin.password -AsPlainText)" 
+        $body = @(
+            "grant_type=password",
+            "scope=write",
+            "username=$($admin.username)",
+            "password=$(ConvertFrom-SecureString -SecureString $admin.password -AsPlainText)"
+        )
     }
     process {
         #AUTHENTICATE TO THE AVAMAR API 
@@ -48,7 +53,7 @@ function connect-restapi {
         -Method POST `
         -ContentType 'application/x-www-form-urlencoded' `
         -Headers @{Authorization=("Basic {0}" -f $base64AuthInfo)} `
-        -Body $body `
+        -Body ($body -join '&')`
         -SkipCertificateCheck
 
         #BUILD THE AUTHOBJECT FOR SUBESEQUENT REST API CALLS
@@ -135,7 +140,7 @@ function get-checkpoints {
 
         # GET ATTACHED DATA DOMAIN SYSTEMS
         $Query = Invoke-RestMethod `
-        -Uri "$($AuthObject.server)/checkpoints" `
+        -Uri "$($AuthObject.server)/server/checkpoints" `
         -Method GET `
         -ContentType 'application/json' `
         -Headers ($AuthObject.token) `
@@ -161,5 +166,46 @@ function get-systemevents {
         -SkipCertificateCheck
         
         return $Query
+    } # END PROCESS
+} # END FUNCTION
+
+function get-activities {
+    [CmdletBinding()]
+    param (
+    )
+    begin {}
+    process {
+
+        $Results = @()
+
+        # OMIT /MC_RETIRED AND /MC_SYSTEM DOMAINS
+        $Query = Invoke-RestMethod `
+        -Uri "$($AuthObject.server)/clients?filter=domainFqdn!=/MC_RETIRED&filter=domainFqdn!=/MC_SYSTEM&recursive=true&size=$($PageSize)&page=0" `
+        -Method GET `
+        -ContentType 'application/json' `
+        -Headers ($AuthObject.token) `
+        -SkipCertificateCheck
+      
+        # IF THE RESULTS ARE GREATER THAN 1 PAGE, GET ALL PAGED RESULTS
+        if($Query.totalPages -gt 1) {
+            for($i=0;$i -lt $Query.totalPages;$i++) {
+                Write-Progress `
+                -Activity "Processing pages..." `
+                -Status "$($i+1) of $($Query.totalPages) - $([math]::round((($i/$Query.totalPages)*100),2))% " `
+                -PercentComplete (($i/$Query.totalPages)*100)
+
+                $Pages = Invoke-RestMethod `
+                -Uri "$($AuthObject.server)/clients?filter=domainFqdn!=/MC_RETIRED&filter=domainFqdn!=/MC_SYSTEM&recursive=true&size=$($PageSize)&page=$($i)" `
+                -Method GET `
+                -ContentType 'application/json' `
+                -Headers ($AuthObject.token) `
+                -SkipCertificateCheck
+
+                $Results += $Pages.content
+            } # END FOR
+        } else {
+            $Results = $Query.content
+        }
+        return $Results;
     } # END PROCESS
 } # END FUNCTION

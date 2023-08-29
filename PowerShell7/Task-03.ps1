@@ -4,12 +4,12 @@
 #>
 
 Import-Module .\dell.avamar.psm1 -Force
-$avamar = 'ave-02.vcorp.local'
+$avamar = 'ave-01.vcorp.local'
 
 connect-restapi -Server $avamar
 
 <#
-   GET CHECKPOINTS
+   GET CLIENTS
 #>
 
 $query = get-checkpoints

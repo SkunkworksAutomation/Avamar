@@ -4,7 +4,7 @@
 #>
 
 Import-Module .\dell.avamar.psm1 -Force
-$avamar = 'ave-02.vcorp.local'
+$avamar = 'ave-01.vcorp.local'
 $pagesize = 25
 connect-restapi -Server $avamar
 
