@@ -1,0 +1,52 @@
+{
+    "avamar":"ave-01.vcorp.local",
+    "source": {
+        "client":"win-fsa-01.vcorp.local",
+        "domain":"/clients",
+        "plugin": 3001
+    },
+    "activities": [
+        {
+            "target":"uubu-fsa-01.vcorp.local",
+            "domain":"/clients",
+            "plugin": 1001,
+            "dates":[
+                "2024-02-13",
+                "2024-02-14"
+            ],
+            "folders":[
+                {
+                    "name": "C:/inetpub/wwwroot/web1/"
+                },
+                {
+                    "name": "C:/inetpub/wwwroot/web2/"
+                },
+                {
+                    "name": "C:/inetpub/wwwroot/web3/"
+                }
+            ],
+            "saveas": "/home/dell"
+        },
+        {
+            "target":"ubu-fsa-02.vcorp.local",
+            "domain":"/clients",
+            "plugin": 1001,
+            "dates":[
+                "2024-02-15",
+                "2024-02-16"
+            ],
+            "folders":[
+                {
+                    "name": "C:/inetpub/wwwroot/web4/"
+                },
+                {
+                    "name": "C:/inetpub/wwwroot/web5/"
+                },
+                {
+                    "name": "C:/inetpub/wwwroot/web6/"
+                }
+            ],
+            "saveas": "/home/dell"
+        }
+    ]
+}
