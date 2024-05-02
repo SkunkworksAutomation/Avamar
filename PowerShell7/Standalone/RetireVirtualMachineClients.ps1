@@ -146,7 +146,7 @@ connect-restapi -Server $avamar
 
 # 2.) Get the clients to decommission
 $clients = get-clients -Search $search -Domain "/$($vcenter)" -Recursive $true
-$clients | Select-Object id,name | Format-Table -AutoSize
+$clients | Sort-Object name | Select-Object domainFqdn,id,name | Format-Table -AutoSize
 
 if($clients.length -gt 0){
     # DECOMMISSION, TRUE
